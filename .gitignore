@@ -139,7 +139,7 @@ dmypy.json
 update_pip.txt
 freemocap/user_preferences.yaml
 freemocap/fmc_startup/user_preferences.yaml
-
+freemocap-ui/threejs_stuff/
 .obsidian/
 data/
 

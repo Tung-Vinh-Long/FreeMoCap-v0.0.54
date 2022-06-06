@@ -11,6 +11,7 @@ from pyqtgraph.dockarea.DockArea import DockArea
 from pyqtgraph.Qt import QtWidgets
 
 from src.core_processor.fps.timestamp_manager import TimestampManager
+from src.pipelines.session_pipeline.data_classes.data_3d_single_frame_payload import Data3dSingleFramePayload
 
 logger = logging.getLogger(__name__)
 
@@ -270,4 +271,7 @@ class QTVisualizerAndGui:
 
         self.opengl_3d_plot_dock = Dock("3d View Port")
         self.opengl_3d_plot_dock.addWidget(self.opengl_3d_plot_widget)
-        self._main_dock_area.addDock(self.opengl_3d_plot_dock, 'right', self._timestamp_diff_histgoram_dock )
+        self._main_dock_area.addDock(self.opengl_3d_plot_dock, 'bottom', self._camera_views_dock)
+
+    def update_3d_view_port(self, charuco_frame_payload:Data3dSingleFramePayload, type:str='generic'):
+
