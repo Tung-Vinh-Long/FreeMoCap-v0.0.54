@@ -187,39 +187,24 @@ class OpenCVCamera:
     def get_next_frame(self):
 
         try:
-            #
-            # uncomment above and below these calls to measure the time it takes to grab a frame
-            #
-            # timestamp_ns_pre = time.perf_counter_ns()
-
             ### Q - Why are we using `cv2.VideoCapture.grab();cv2.VideoCapture.retrieve();`  and not just `cv2.VideoCapture.read()`?
             ### A - see -> https://stackoverflow.com/questions/57716962/difference-between-video-capture-read-and-grab
             self._opencv_video_capture_object.grab()
             success, image = self._opencv_video_capture_object.retrieve()
-            this_frame_timestamp_perf_counter_ns = (
-                time.perf_counter_ns() - self._session_start_time_perf_counter_ns
-            )
+            this_frame_timestamp_perf_counter_in_seconds = time.perf_counter()
+            this_frame_unix_time_in_seconds = time.time()
 
-            # timestamp_ns_post = time.perf_counter_ns()
-            # it_took_this_many_seconds_to_grab_the_frame = (timestamp_ns_post-timestamp_ns_pre)/1e9
         except:
             logger.error(f"Failed to read frame from Camera: {self.webcam_id_as_str}")
             raise Exception
 
         self._new_frame_ready = success
 
-        if success:
-            self._number_of_frames_recorded += 1
-            # if self._camera_view_update_function is not None:
-            #     self._camera_view_update_function(self.webcam_id_as_str, cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-
         return FramePayload(
             success=success,
             image=image,
-            timestamp_in_seconds_from_record_start=this_frame_timestamp_perf_counter_ns
-            / 1e9,
-            timestamp_unix_time_seconds=time.time(),
-            frame_number=self.latest_frame_number,
+            timestamp_perf_counter_in_seconds=this_frame_timestamp_perf_counter_in_seconds,
+            timestamp_unix_time_seconds=this_frame_unix_time_in_seconds,
             webcam_id=self.webcam_id_as_str,
         )
 
