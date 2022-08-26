@@ -76,6 +76,8 @@ def grab_incoming_frame_payloads(
 
 
 class CameraThreadManager:
+    _thread_exit_event = None
+
     @property
     def thread_exit_event(self):
         return self._thread_exit_event
@@ -86,8 +88,12 @@ class CameraThreadManager:
 
     def create_camera_threads(
         self, dictionary_of_webcam_configs=Dict[str, WebcamConfig]
-    ):
+    ) -> queue.Queue:
         logger.info("creating camera threads")
+
+        if self._thread_exit_event is not None:
+            self._thread_exit_event.set()
+
         self._thread_exit_event = threading.Event()
 
         # number of cameras plus one for the frame_grabbing_thread
@@ -118,6 +124,8 @@ class CameraThreadManager:
 
         for camera_thread in self._dictionary_of_camera_threads.values():
             camera_thread.start()
+
+        return self._multi_frame_payload_queue
 
     def _create_camera_thread(
         self,
