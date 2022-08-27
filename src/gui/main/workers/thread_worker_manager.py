@@ -1,3 +1,4 @@
+import threading
 from pathlib import Path
 from typing import Union, Dict, Callable
 
@@ -47,6 +48,9 @@ class ThreadWorkerManager(QWidget):
     #
     # def stop_saving_camera_frames(self):
     #     self._multi_camera_manager.stop_saving_camera_frames()
+    @property
+    def multi_camera_observer_thread_worker(self):
+        return self._multi_camera_observer_thread_worker
 
     def launch_detect_cameras_worker(self):
         logger.info("Launch camera detection worker")
@@ -56,15 +60,31 @@ class ThreadWorkerManager(QWidget):
         )
         self._camera_detection_thread_worker.start()
 
-    def connect_to_camera_threads(self, webcam_config_dict):
+    def launch_multi_camera_observer_thread_worker(
+        self, webcam_config_dict, multi_cam_exit_event: threading.Event
+    ):
+
+        logger.info("Launch multi-cam-observer-thread-worker")
+
         self._multi_camera_observer_thread_worker = MultiCameraObserverThreadWorker(
             camera_configs_dict=webcam_config_dict,
+            multi_cam_exit_event=multi_cam_exit_event,
             new_multi_frame_available_signal=self.new_multi_frame_available_signal,
             cameras_connected_signal=self.cameras_connected_signal,
             show_videos_in_cv2_windows_bool=True,
         )
+
         self._multi_camera_observer_thread_worker.launch_multi_camera_threads()
+        self._multi_camera_observer_thread_worker.finished.connect(
+            self._multi_camera_observer_thread_worker.shut_down_multi_camera_runner
+        )
         self._multi_camera_observer_thread_worker.start()
+
+    # def quit_multi_camera_thread(self):
+    #     self._multi_camera_observer_thread_worker.quit()
+    #     logger.info("Starting shut down for the multicamera oberver thread...")
+    #     self._multi_camera_observer_thread_worker.wait()
+    #     logger.info("Multicamera oberver thread shut down!")
 
     def launch_save_videos_thread_worker(
         self,

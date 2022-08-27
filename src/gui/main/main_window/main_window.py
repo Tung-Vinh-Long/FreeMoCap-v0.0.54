@@ -1,3 +1,5 @@
+import threading
+
 from PyQt6.QtWidgets import QMainWindow, QHBoxLayout, QWidget
 
 from src.cameras.detection.models import FoundCamerasResponse
@@ -19,6 +21,7 @@ from src.core_processes.mediapipe_2d_skeleton_detector.load_mediapipe2d_data imp
 from src.export_stuff.blender_stuff.open_session_in_blender import (
     open_session_in_blender,
 )
+from src.gui.main.app import get_qt_app
 from src.gui.main.app_state.app_state import APP_STATE
 from src.gui.main.main_window.left_panel_controls.control_panel import ControlPanel
 from src.gui.main.main_window.right_side_panel.right_side_panel import (
@@ -160,6 +163,17 @@ class MainWindow(QMainWindow):
         self._thread_worker_manager.camera_detection_finished.connect(
             self.handle_found_camera_response
         )
+        self._thread_worker_manager.cameras_connected_signal.connect(
+            lambda: self._control_panel.camera_setup_control_panel.apply_settings_to_cameras_button.setEnabled(
+                True
+            )
+        )
+
+        self._thread_worker_manager.cameras_connected_signal.connect(
+            lambda: self._control_panel.camera_setup_control_panel.redetect_cameras_button.setEnabled(
+                True
+            )
+        )
 
         # self._thread_worker_manager.cameras_connected_signal.connect(
         #     self._camera_view_panel.show_camera_grid_view
@@ -191,14 +205,52 @@ class MainWindow(QMainWindow):
         self._control_panel.camera_setup_control_panel.redetect_cameras_button.setText(
             "Re-Detect Cameras"
         )
+        self._control_panel.camera_setup_control_panel.redetect_cameras_button.setEnabled(
+            False
+        )
+
         self._thread_worker_manager.launch_detect_cameras_worker()
 
     def _connect_to_camera_threads(self):
-        camera_configs_dict = APP_STATE.camera_configs.copy()
-        self._camera_view_panel.camera_stream_grid_view.create_camera_layouts(
-            camera_configs_dict
+
+        self._control_panel.camera_setup_control_panel.apply_settings_to_cameras_button.setEnabled(
+            False
         )
-        self._thread_worker_manager.connect_to_camera_threads(camera_configs_dict)
+
+        camera_configs_dict = (
+            self._control_panel.camera_setup_control_panel.get_webcam_configs_from_parameter_tree()
+        )
+        # camera_configs_dict = APP_STATE.copy().camera_configs
+
+        # self._camera_view_panel.camera_stream_grid_view.create_camera_layouts(
+        #     camera_configs_dict
+        # )
+
+        try:
+            self._multi_cam_exit_event.set()
+
+            logger.info(
+                f"---------------------------------------------------------------/n"
+                f"---------------------------------------------------------------/n"
+                f"|||_______________Multi-cam exit event set!-----------------|||/n"
+                f"---------------------------------------------------------------/n"
+                f"---------------------------------------------------------------/n"
+            )
+            while (
+                self._thread_worker_manager.multi_camera_observer_thread_worker.isRunning()
+            ):
+                logger.info(
+                    "Waiting on `multi_camera_observer_thread_worker` to finish..."
+                )
+            self._multi_cam_exit_event = threading.Event()
+        except:
+            pass
+
+        self._multi_cam_exit_event = threading.Event()
+        self._thread_worker_manager.launch_multi_camera_observer_thread_worker(
+            webcam_config_dict=camera_configs_dict,
+            multi_cam_exit_event=self._multi_cam_exit_event,
+        )
 
     def _start_recording_videos(self, panel):
         panel.change_button_states_on_record_start()

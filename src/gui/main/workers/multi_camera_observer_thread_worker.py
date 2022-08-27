@@ -1,3 +1,4 @@
+import threading
 from typing import Dict
 
 import cv2
@@ -13,18 +14,23 @@ import logging
 from src.gui.main.app import get_qt_app
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class MultiCameraObserverThreadWorker(QThread):
     def __init__(
         self,
         camera_configs_dict: Dict[str, WebcamConfig],
+        multi_cam_exit_event: threading.Event,
         new_multi_frame_available_signal: pyqtSignal,
         cameras_connected_signal: pyqtSignal,
         show_videos_in_cv2_windows_bool: bool = False,
     ):
         super().__init__()
+
         self._camera_config_dict = camera_configs_dict
+        self._multi_cam_exit_event = multi_cam_exit_event
+
         self._new_multi_frame_available_signal = new_multi_frame_available_signal
         self.cameras_connected_signal = cameras_connected_signal
         self._show_videos_in_cv2_windows_bool = show_videos_in_cv2_windows_bool
@@ -36,14 +42,16 @@ class MultiCameraObserverThreadWorker(QThread):
         self._dictionary_of_video_recorders = self._create_video_recorders()
         self._should_save_frames = False
 
-        get_qt_app().aboutToQuit.connect(self.shut_down_multi_camera)
+        get_qt_app().aboutToQuit.connect(self.shut_down_multi_camera_runner)
 
     @property
     def dictionary_of_video_recorders(self):
         return self._dictionary_of_video_recorders
 
     def launch_multi_camera_threads(self, show_videos_in_cv2_windows: bool = False):
-        self._multi_camera_thread_runner = MultiCameraThreadRunner()
+        self._multi_camera_thread_runner = MultiCameraThreadRunner(
+            thread_exit_event=self._multi_cam_exit_event
+        )
 
         self._multi_camera_thread_runner.create_and_launch_camera_threads(
             dictionary_of_webcam_configs=self._camera_config_dict,
@@ -60,12 +68,12 @@ class MultiCameraObserverThreadWorker(QThread):
                 logger.debug(
                     f"Multi-frame payload queueue size: {self._multi_camera_thread_runner.multi_frame_payload_queue.qsize()}"
                 )
-                print(f"------------{self._show_videos_in_cv2_windows}--------")
+
                 if self._show_videos_in_cv2_windows_bool:
                     self._show_videos_in_cv2_windows(multi_frame_payload)
                 # self._new_multi_frame_available_signal.emit(multi_frame_payload)
 
-    def shut_down_multi_camera(self):
+    def shut_down_multi_camera_runner(self):
         self._multi_camera_thread_runner.exit()
 
     def start_saving_camera_frames(self):
@@ -111,3 +119,7 @@ class MultiCameraObserverThreadWorker(QThread):
 
         if self._multi_camera_thread_runner.thread_exit_event.is_set():
             cv2.destroyAllWindows()
+
+    def quit(self):
+        self._multi_camera_thread_runner.thread_exit_event.is_set()
+        self.exit()

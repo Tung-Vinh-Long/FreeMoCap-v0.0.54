@@ -1,5 +1,6 @@
 import queue
 import threading
+import traceback
 from typing import Dict
 
 import cv2
@@ -23,27 +24,36 @@ def stuff_incoming_frames_into_a_queue(
     opencv_camera = OpenCVCamera(webcam_config)
     opencv_camera.connect()
     logger.info(
-        "stuff_incoming_frames_into_a_queue starting for {}".format(opencv_camera.name)
+        f"STARTING THREAD - stuff_incoming_frames_into_a_queue for Camera {opencv_camera.name}"
     )
 
     while not thread_exit_event.is_set():
-        frame_payload = opencv_camera.get_next_frame()
-        logger.debug(
-            f"{opencv_camera.name} grabbed a frame at timestamp: {frame_payload.timestamp_unix_time_seconds:.4f}"
-        )
-
-        if not frame_payload.success:
-            logger.error(
-                f"{opencv_camera.name} FAILED to grab a frame at timestamp: {frame_payload.timestamp_unix_time_seconds:.4f}"
+        try:
+            frame_payload = opencv_camera.get_next_frame()
+            logger.debug(
+                f"{opencv_camera.name} grabbed a frame at timestamp: {frame_payload.timestamp_unix_time_seconds:.4f}"
             )
 
-        thread_queue.put(frame_payload)
-        remaining = thread_barrier.wait()
-        if remaining == 0:
-            logger.debug(f"{opencv_camera.name} was last to hit threading barrier")
+            if not frame_payload.success:
+                logger.error(
+                    f"{opencv_camera.name} FAILED to grab a frame at timestamp: {frame_payload.timestamp_unix_time_seconds:.4f}"
+                )
 
+            thread_queue.put(frame_payload)
+            remaining = thread_barrier.wait()
+            if remaining == 0:
+                logger.debug(f"{opencv_camera.name} was last to hit threading barrier")
+        except Exception as e:
+            print(e)
+            traceback.print_exception()
     # after thread_exit_event
+    logger.info(
+        f"ENDING THREAD - stuff_incoming_frames_into_a_queue for Camera {opencv_camera.name}"
+    )
+    logger.info(f"Releasing Camera {opencv_camera.webcam_id_as_str} at {opencv_camera}")
     opencv_camera.release()
+    # logger.info(f"Deleting Camera {opencv_camera.webcam_id_as_str}: {opencv_camera}")
+    # del opencv_camera
 
 
 def gather_incoming_frames_and_stuff_them_into_a_queue(
@@ -52,6 +62,8 @@ def gather_incoming_frames_and_stuff_them_into_a_queue(
     thread_barrier: threading.Barrier,
     thread_exit_event: threading.Event,
 ):
+    logger.info(f"STARTING THREAD - gather_incoming_frames_and_stuff_them_into_a_queue")
+
     while not thread_exit_event.is_set():
         remaining = thread_barrier.wait()
         if remaining == 0:
@@ -65,9 +77,11 @@ def gather_incoming_frames_and_stuff_them_into_a_queue(
 
         logger.debug("stuffing a multi_frame_payload into the queue")
         multi_frame_payload_queue.put(multi_frame_payload_dictionary)
+    logger.info(f"ENDING THREAD - gather_incoming_frames_and_stuff_them_into_a_queue")
 
 
 def show_videos_in_cv2_windows(multi_frame_payload_queue, thread_exit_event):
+    logger.info(f"STARTING THREAD - show_videos_in_cv2_windows")
     while not thread_exit_event.is_set():
         if multi_frame_payload_queue.qsize() > 0:
             multi_frame_payload = multi_frame_payload_queue.get()
@@ -88,12 +102,14 @@ def show_videos_in_cv2_windows(multi_frame_payload_queue, thread_exit_event):
         if key == 27:  # esc key kills all streams, I think
             thread_exit_event.set()
 
-        if thread_exit_event.is_set():
-            cv2.destroyAllWindows()
+    cv2.destroyAllWindows()
+
+    logger.info(f"ENDING THREAD - show_videos_in_cv2_windows")
 
 
 class MultiCameraThreadRunner:
-    thread_exit_event = None
+    def __init__(self, thread_exit_event: threading.Event):
+        self.thread_exit_event = thread_exit_event
 
     @property
     def multi_frame_payload_queue(self):
@@ -104,13 +120,9 @@ class MultiCameraThreadRunner:
         dictionary_of_webcam_configs=Dict[str, WebcamConfig],
         show_videos_in_cv2_windows: bool = False,
     ) -> queue.Queue:
-        logger.info("creating camera threads")
-
-        if self.thread_exit_event is not None:
-            # if things are already running, shut them down before restarting
-            self.thread_exit_event.set()
-
-        self.thread_exit_event = threading.Event()
+        logger.info(
+            f"Creating camera threads for Cameras: {[dictionary_of_webcam_configs.values()]}"
+        )
 
         # number of cameras plus one for the frame_grabbing_thread
         barrier_count = len(dictionary_of_webcam_configs) + 1
@@ -168,7 +180,7 @@ class MultiCameraThreadRunner:
         thread_barrier: threading.Barrier,
         thread_exit_event: threading.Event,
     ):
-        logger.info(f"Starting thread for Camera {webcam_config.webcam_id}")
+        logger.info(f"Creating thread for Camera {webcam_config.webcam_id}")
 
         camera_thread = threading.Thread(
             target=stuff_incoming_frames_into_a_queue,
@@ -189,6 +201,8 @@ class MultiCameraThreadRunner:
         thread_barrier: threading.Barrier,
         thread_exit_event: threading.Event,
     ):
+        logger.info(f"Creating multi frame gatherer thread...")
+
         self._multi_frame_gatherer_thread = threading.Thread(
             target=gather_incoming_frames_and_stuff_them_into_a_queue,
             args=(
@@ -208,7 +222,8 @@ class MultiCameraThreadRunner:
 if __name__ == "__main__":
     from src.cameras.detection.cam_singleton import get_or_create_cams
 
-    camera_thread_manager = MultiCameraThreadRunner()
+    thread_exit_event = threading.Event()
+    camera_thread_manager = MultiCameraThreadRunner(thread_exit_event=thread_exit_event)
 
     found_cameras_response = get_or_create_cams()
     available_cameras = found_cameras_response.cameras_found_list

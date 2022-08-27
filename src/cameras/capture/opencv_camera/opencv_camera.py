@@ -46,10 +46,6 @@ class OpenCVCamera:
         return self._new_frame_ready
 
     @property
-    def video_recorder(self):
-        return self._video_recorder
-
-    @property
     def name(self):
         return self._name
 

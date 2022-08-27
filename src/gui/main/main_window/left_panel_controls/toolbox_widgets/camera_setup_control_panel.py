@@ -53,7 +53,10 @@ class CameraSetupControlPanel(QWidget):
         self._redetect_cameras_button.setEnabled(True)
         self._panel_layout.addWidget(self._redetect_cameras_button)
 
-        self._apply_settings_to_cameras_button = PrimaryButton(
+        # self._apply_settings_to_cameras_button = PrimaryButton(
+        #     "Apply settings to cameras",
+        # )
+        self._apply_settings_to_cameras_button = QPushButton(
             "Apply settings to cameras",
         )
         self._apply_settings_to_cameras_button.setEnabled(True)
