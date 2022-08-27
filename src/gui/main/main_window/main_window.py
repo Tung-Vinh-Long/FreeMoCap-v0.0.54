@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QMainWindow, QHBoxLayout, QWidget
 
+from src.cameras.detection.models import FoundCamerasResponse
 from src.config.home_dir import (
     get_calibration_videos_folder_path,
     get_synchronized_videos_folder_path,
@@ -7,6 +8,7 @@ from src.config.home_dir import (
     get_session_calibration_toml_file_path,
     get_output_data_folder_path,
 )
+from src.config.webcam_config import WebcamConfig
 from src.core_processes.capture_volume_calibration.get_anipose_calibration_object import (
     load_most_recent_anipose_calibration_toml,
     load_calibration_from_session_id,
@@ -17,6 +19,7 @@ from src.core_processes.mediapipe_2d_skeleton_detector.load_mediapipe2d_data imp
 from src.export_stuff.blender_stuff.open_session_in_blender import (
     open_session_in_blender,
 )
+from src.gui.main.app_state.app_state import APP_STATE
 from src.gui.main.main_window.left_panel_controls.control_panel import ControlPanel
 from src.gui.main.main_window.right_side_panel.right_side_panel import (
     RightSidePanel,
@@ -27,7 +30,11 @@ from src.gui.main.main_window.middle_panel_viewers.camera_view_panel import (
 
 import logging
 
+from src.gui.main.workers.multi_camera_observer_thread_worker import (
+    MultiCameraObserverThreadWorker,
+)
 from src.gui.main.workers.thread_worker_manager import ThreadWorkerManager
+
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +45,11 @@ class MainWindow(QMainWindow):
 
         super().__init__()
         self.setWindowTitle("freemocap")
-        self._main_window_width = int(1920 * 0.8)
-        self._main_window_height = int(1080 * 0.8)
+        APP_STATE.main_window_height = int(1920 * 0.8)
+        APP_STATE.main_window_width = int(1080 * 0.8)
+        self._main_window_width = APP_STATE.main_window_height
+        self._main_window_height = APP_STATE.main_window_width
+
         self.setGeometry(0, 0, self._main_window_width, self._main_window_height)
         self._main_layout = self._create_main_layout()
 
@@ -93,12 +103,11 @@ class MainWindow(QMainWindow):
         )
 
         # Camera Control Panel
-        self._control_panel.camera_setup_control_panel.apply_settings_to_cameras_button.clicked.connect(
-            self._restart_cameras_with_new_settings
-        )
-
         self._control_panel.camera_setup_control_panel.redetect_cameras_button.clicked.connect(
-            self._thread_worker_manager.launch_detect_cameras_worker
+            self._detect_cameras
+        )
+        self._control_panel.camera_setup_control_panel.apply_settings_to_cameras_button.clicked.connect(
+            self._connect_to_camera_threads
         )
 
         # Calibration panel
@@ -149,46 +158,67 @@ class MainWindow(QMainWindow):
         logger.info("Connecting signals to stuff")
 
         self._thread_worker_manager.camera_detection_finished.connect(
-            self._control_panel.handle_found_camera_response
+            self.handle_found_camera_response
         )
 
-        self._control_panel.camera_setup_control_panel.camera_parameters_updated_signal.connect(
-            self._thread_worker_manager.create_camera_widgets_with_running_threads
-        )
+        # self._thread_worker_manager.cameras_connected_signal.connect(
+        #     self._camera_view_panel.show_camera_grid_view
+        # )
+        #
+        # self._thread_worker_manager.multi_frame_payload_available_signal.connect(
+        #     self._camera_view_panel.update_camera_images
+        # )
 
-        self._thread_worker_manager.cameras_connected_signal.connect(
-            self._camera_view_panel.show_camera_streams
+    def _get_session_id(self):
+        return (
+            self._control_panel._create_or_load_new_session_panel.session_id_input_string
         )
 
     def _start_new_session(self):
-        self._session_id = (
-            self._control_panel._create_or_load_new_session_panel.session_id_input_string
-        )
+        self._session_id = self._get_session_id()
 
         session_path = get_session_folder_path(self._session_id, create_folder=True)
         self._right_side_panel.file_system_view_widget.set_session_path_as_root(
             session_path
         )
-        self._thread_worker_manager.launch_detect_cameras_worker()
         self._control_panel.toolbox_widget.setCurrentWidget(
             self._control_panel.camera_setup_control_panel
         )
 
+        self._detect_cameras()
+
+    def _detect_cameras(self):
+        self._control_panel.camera_setup_control_panel.redetect_cameras_button.setText(
+            "Re-Detect Cameras"
+        )
+        self._thread_worker_manager.launch_detect_cameras_worker()
+
+    def _connect_to_camera_threads(self):
+        camera_configs_dict = APP_STATE.camera_configs.copy()
+        self._camera_view_panel.camera_stream_grid_view.create_camera_layouts(
+            camera_configs_dict
+        )
+        self._thread_worker_manager.connect_to_camera_threads(camera_configs_dict)
+
     def _start_recording_videos(self, panel):
         panel.change_button_states_on_record_start()
-        self._thread_worker_manager.start_recording_videos()
+        self._multi_camera_manager.start_saving_camera_frames()
 
     def _stop_recording_videos(self, panel, calibration_videos=False):
         panel.change_button_states_on_record_stop()
-        self._thread_worker_manager.stop_recording_videos()
+        self._multi_camera_manager.stop_saving_camera_frames()
 
         if calibration_videos:
-            path_to_save_videos = get_calibration_videos_folder_path(self._session_id)
+            folder_to_save_videos = get_calibration_videos_folder_path(self._session_id)
         else:
-            path_to_save_videos = get_synchronized_videos_folder_path(self._session_id)
+            folder_to_save_videos = get_synchronized_videos_folder_path(
+                self._session_id
+            )
 
         self._thread_worker_manager.launch_save_videos_thread_worker(
-            path_to_save_videos
+            folder_to_save_videos=folder_to_save_videos,
+            dictionary_of_video_recorders=self._multi_camera_manager.dictionary_of_video_recorders,
+            reset_video_recorders_function=self._multi_camera_manager.reset_video_recorders,
         )
 
     def _setup_and_launch_anipose_calibration_thread_worker(self):
@@ -237,11 +267,20 @@ class MainWindow(QMainWindow):
         print(f"Open in Blender : {self._session_id}")
         open_session_in_blender(self._session_id)
 
-    def _restart_cameras_with_new_settings(self):
-        self._thread_worker_manager.close_camera_widgets()
-        while self._thread_worker_manager.are_the_cameras_running():
-            pass
-            logger.debug(
-                "Waiting for cameras to shut down before gathering webcam configs..."
-            )
-        self._control_panel.camera_setup_control_panel.get_webcam_configs_from_parameter_tree()
+    def handle_found_camera_response(
+        self, found_cameras_response: FoundCamerasResponse
+    ):
+
+        APP_STATE.available_cameras = found_cameras_response.cameras_found_list
+
+        logger.info(f"Found cameras with IDs:  {APP_STATE.available_cameras}")
+
+        dictionary_of_webcam_configs = {}
+        for camera_id in APP_STATE.available_cameras:
+            dictionary_of_webcam_configs[camera_id] = WebcamConfig(webcam_id=camera_id)
+
+        APP_STATE.camera_configs = dictionary_of_webcam_configs
+
+        self._control_panel.camera_setup_control_panel.update_camera_config_parameter_tree(
+            APP_STATE.camera_configs
+        )

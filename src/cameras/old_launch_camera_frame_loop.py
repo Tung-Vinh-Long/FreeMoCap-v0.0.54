@@ -6,7 +6,7 @@ import traceback
 
 import cv2
 
-from src.cameras.multicam_manager.cv_camera_manager import OpenCVCameraManager
+from src.cameras.old_multicam_manager.cv_camera_manager import OpenCVCameraManager
 from src.config.webcam_config import WebcamConfig
 import asyncio
 

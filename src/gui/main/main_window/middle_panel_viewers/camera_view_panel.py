@@ -1,7 +1,9 @@
 import time
+from typing import Dict
 
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QFrame, QVBoxLayout, QWidget, QLabel
 
+from src.cameras.capture.dataclasses.frame_payload import FramePayload
 from src.cameras.detection.models import FoundCamerasResponse
 from src.config.webcam_config import WebcamConfig
 
@@ -22,15 +24,13 @@ class CameraViewPanel(QWidget):
         super().__init__()
         self._frame = QFrame()
         self._frame.setFrameShape(QFrame.Shape.StyledPanel)
+
         self._layout = QVBoxLayout()
+        self._welcome_to_freemocap_title_widget = self._welcome_to_freemocap_title()
+        self._layout.addWidget(self._welcome_to_freemocap_title_widget)
         self._frame.setLayout(self._layout)
 
-        self._welcome_to_freemocap_title_widget = self._welcome_to_freemocap_title()
-        self._central_layout = QVBoxLayout()
-        self._central_layout.addWidget(self._welcome_to_freemocap_title_widget)
-        self._layout.addLayout(self._central_layout)
-
-        self._camera_stream_grid_view = None
+        self._camera_stream_grid_view = CameraStreamGridView()
 
     @property
     def frame(self):
@@ -46,17 +46,11 @@ class CameraViewPanel(QWidget):
         )
         return session_title
 
-    def reconnect_to_cameras(self):
-        self._camera_stream_grid_view.close_and_reconnect_to_cameras()
-
-    def show_camera_streams(self, dictionary_of_single_camera_layouts):
-
-        clear_layout(self._central_layout)
-
-        self._camera_stream_grid_view = CameraStreamGridView()
-
-        self._camera_stream_grid_view.show_camera_streams(
-            dictionary_of_single_camera_layouts
+    def update_camera_images(self, multi_frame_payload: Dict[str, FramePayload]):
+        self._camera_stream_grid_view.update_camera_images(
+            multi_frame_payload=multi_frame_payload
         )
-        logger.info("Showing camera stream grid view")
-        self._central_layout.addWidget(self._camera_stream_grid_view)
+
+    def show_camera_grid_view(self):
+        self._welcome_to_freemocap_title_widget.close()
+        self._layout.addWidget(self._camera_stream_grid_view)

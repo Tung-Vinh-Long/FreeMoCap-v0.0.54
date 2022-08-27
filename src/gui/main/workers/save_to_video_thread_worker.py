@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 from typing import Union, Dict
 
-from PyQt6.QtCore import QThread
+from PyQt6.QtCore import QThread, pyqtSignal
 
 from src.cameras.persistence.video_writer.video_recorder import VideoRecorder
 from src.cameras.save_synchronized_videos import save_synchronized_videos
@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 
 
 class SaveToVideoThreadWorker(QThread):
+    finished = pyqtSignal()
+
     def __init__(
         self,
         dictionary_of_video_recorders: Dict[str, VideoRecorder],
@@ -24,3 +26,4 @@ class SaveToVideoThreadWorker(QThread):
         save_synchronized_videos(
             self._dictionary_of_video_recorders, self._folder_to_save_videos
         )
+        self.finished.emit()

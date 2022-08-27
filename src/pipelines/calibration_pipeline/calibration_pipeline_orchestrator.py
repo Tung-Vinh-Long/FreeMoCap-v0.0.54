@@ -6,7 +6,7 @@ from typing import Union, Callable
 
 import cv2
 
-from src.cameras.multicam_manager.cv_camera_manager import OpenCVCameraManager
+from src.cameras.old_multicam_manager.cv_camera_manager import OpenCVCameraManager
 from src.config.home_dir import (
     create_default_session_id,
     get_session_folder_path,

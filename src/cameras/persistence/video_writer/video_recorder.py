@@ -9,14 +9,7 @@ import numpy as np
 import pandas as pd
 
 from src.cameras.capture.dataclasses.frame_payload import FramePayload
-from src.cameras.persistence.video_writer.save_options_dataclass import SaveOptions
-from src.config.data_paths import freemocap_data_path
-from src.config.home_dir import (
-    get_session_folder_path,
-    get_synchronized_videos_folder_path,
-    get_calibration_videos_folder_path,
-    get_mediapipe_annotated_videos_folder_path,
-)
+
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +29,10 @@ class VideoRecorder:
         return self._frame_payload_list
 
     def close(self):
-        self._cv2_video_writer.release()
+        try:
+            self._cv2_video_writer.release()
+        except:
+            pass
 
     def append_frame_payload_to_list(self, frame_payload: FramePayload):
         self._frame_payload_list.append(frame_payload)

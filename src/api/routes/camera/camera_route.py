@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from src.api.services.user_config import UserConfigService, WebcamConfigModel
 from src.cameras.detection.cam_singleton import get_or_create_cams
-from src.cameras.multicam_manager.cv_camera_manager import OpenCVCameraManager
+from src.cameras.old_multicam_manager.cv_camera_manager import OpenCVCameraManager
 
 camera_router = APIRouter()
 

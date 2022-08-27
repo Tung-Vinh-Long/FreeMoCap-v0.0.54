@@ -10,8 +10,6 @@ class AppState(BaseModel):
     camera_configs: dict = {}
     main_window_height: int = None
     main_window_width: int = None
-    use_previous_calibration: bool = False
-    rotate_videos_dict: dict = {}
 
 
 APP_STATE = AppState()

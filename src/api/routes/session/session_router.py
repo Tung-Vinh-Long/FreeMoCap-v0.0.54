@@ -9,8 +9,8 @@ from pydantic import BaseModel
 from jon_scratch.pupil_calibration_pipeline.qt_gl_laser_skeleton_visualizer import (
     QtGlLaserSkeletonVisualizer,
 )
-from src.cameras.launch_camera_frame_loop import launch_camera_frame_loop
-from src.cameras.multicam_manager.cv_camera_manager import OpenCVCameraManager
+from src.cameras.old_launch_camera_frame_loop import launch_camera_frame_loop
+from src.cameras.old_multicam_manager.cv_camera_manager import OpenCVCameraManager
 from src.config.home_dir import (
     create_default_session_id,
     get_session_folder_path,

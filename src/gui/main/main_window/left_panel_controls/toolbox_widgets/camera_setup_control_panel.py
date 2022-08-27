@@ -7,6 +7,7 @@ from pyqtgraph.parametertree import ParameterTree, Parameter
 
 from src.cameras.detection.models import FoundCamerasResponse
 from src.config.webcam_config import WebcamConfig
+from src.gui.main.app_state.app_state import APP_STATE
 from src.gui.main.qt_utils.clear_layout import clear_layout
 
 import logging
@@ -42,15 +43,14 @@ def rotate_cv2_code_to_str(rotate_video_value):
 class CameraSetupControlPanel(QWidget):
 
     camera_parameters_updated_signal = pyqtSignal(dict)
-    new_webcam_configs_received_signal = pyqtSignal(dict)
 
     def __init__(self):
         super().__init__()
         self._panel_layout = QVBoxLayout()
         self.setLayout(self._panel_layout)
 
-        self._redetect_cameras_button = QPushButton("TO DO- Re-Detect Cameras")
-        self._redetect_cameras_button.setEnabled(False)
+        self._redetect_cameras_button = QPushButton("Detect Cameras")
+        self._redetect_cameras_button.setEnabled(True)
         self._panel_layout.addWidget(self._redetect_cameras_button)
 
         self._apply_settings_to_cameras_button = PrimaryButton(
@@ -64,10 +64,6 @@ class CameraSetupControlPanel(QWidget):
         self._parameter_tree_layout.addWidget(self._parameter_tree_widget)
         self._panel_layout.addLayout(self._parameter_tree_layout)
 
-        self.new_webcam_configs_received_signal.connect(
-            self.update_camera_config_parameter_tree
-        )
-
     @property
     def apply_settings_to_cameras_button(self):
         return self._apply_settings_to_cameras_button
@@ -76,35 +72,18 @@ class CameraSetupControlPanel(QWidget):
     def redetect_cameras_button(self):
         return self._redetect_cameras_button
 
-    def handle_found_cameras_response(
-        self, found_cameras_response: FoundCamerasResponse
-    ):
-        self._list_of_available_camera_ids = [
-            raw_cam.webcam_id for raw_cam in found_cameras_response.cameras_found_list
-        ]
-
-        logger.info(f"Found cameras with IDs:  {self._list_of_available_camera_ids}")
-
-        self._dictionary_of_webcam_configs = {}
-        for camera_id in self._list_of_available_camera_ids:
-            self._dictionary_of_webcam_configs[camera_id] = WebcamConfig(
-                webcam_id=camera_id
-            )
-
-        self.new_webcam_configs_received_signal.emit(
-            self._dictionary_of_webcam_configs.copy()
-        )
-
     def update_camera_config_parameter_tree(
         self, dictionary_of_webcam_configs: Dict[str, WebcamConfig]
     ):
         logger.info("Updating camera configs")
+        available_cameras = APP_STATE.available_cameras.copy()
+
         clear_layout(self._parameter_tree_layout)
         self._parameter_tree_widget = ParameterTree()
         self._parameter_tree_layout.addWidget(self._parameter_tree_widget)
 
         self._camera_parameter_groups_dictionary = {}
-        for webcam_id in self._list_of_available_camera_ids:
+        for webcam_id in available_cameras:
             if not webcam_id in dictionary_of_webcam_configs:
 
                 self._camera_parameter_groups_dictionary[
@@ -120,8 +99,6 @@ class CameraSetupControlPanel(QWidget):
             self._parameter_tree_widget.addParameters(
                 self._camera_parameter_groups_dictionary[webcam_id]
             )
-
-        self.camera_parameters_updated_signal.emit(dictionary_of_webcam_configs)
 
     def get_webcam_configs_from_parameter_tree(self):
         new_selected_cameras_list = []
@@ -152,11 +129,8 @@ class CameraSetupControlPanel(QWidget):
                         f"Problem creating webcam config from parameter tree for camera: {camera_id} "
                     )
                     raise e
-        self._dictionary_of_webcam_configs = new_camera_configs_dict
 
-        self.new_webcam_configs_received_signal.emit(
-            self._dictionary_of_webcam_configs.copy()
-        )
+        return new_camera_configs_dict
 
     def _create_webcam_parameter_tree(self, webcam_config: WebcamConfig):
         try:

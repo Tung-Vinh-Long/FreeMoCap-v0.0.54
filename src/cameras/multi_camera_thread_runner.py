@@ -1,22 +1,14 @@
-import enum
 import queue
 import threading
-from functools import partialmethod, partial
 from typing import Dict
 
 import cv2
-from PyQt5.QtCore import QThreadPool
 
 from src.cameras.capture.opencv_camera.opencv_camera import OpenCVCamera
-from src.cameras.detection.cam_singleton import get_or_create_cams
 from src.config.webcam_config import WebcamConfig
 
 import logging
 
-from src.gui.main.workers.cam_charuco_frame_thread_worker import (
-    CamCharucoFrameThreadWorker,
-)
-from src.gui.main.workers.cam_frame_worker import CamFrameWorker
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -54,7 +46,7 @@ def stuff_incoming_frames_into_a_queue(
     opencv_camera.release()
 
 
-def grab_incoming_frame_payloads(
+def gather_incoming_frames_and_stuff_them_into_a_queue(
     multi_frame_payload_queue: queue.Queue,
     dictionary_of_incoming_frame_queues: Dict[str, queue.Queue],
     thread_barrier: threading.Barrier,
@@ -64,37 +56,61 @@ def grab_incoming_frame_payloads(
         remaining = thread_barrier.wait()
         if remaining == 0:
             logger.debug(
-                "`grab_incoming_frame_payloads` thread was last to hit threading barrier"
+                "`gather_incoming_frames_and_stuff_them_into_a_queue` thread was last to hit threading barrier"
             )
-        this_multi_frame_payload_dictionary = {}
+        multi_frame_payload_dictionary = {}
 
         for webcam_id, camera_queue in dictionary_of_incoming_frame_queues.items():
-            this_multi_frame_payload_dictionary[webcam_id] = camera_queue.get()
+            multi_frame_payload_dictionary[webcam_id] = camera_queue.get()
 
         logger.debug("stuffing a multi_frame_payload into the queue")
-        multi_frame_payload_queue.put(this_multi_frame_payload_dictionary)
+        multi_frame_payload_queue.put(multi_frame_payload_dictionary)
 
 
-class CameraThreadManager:
-    _thread_exit_event = None
+def show_videos_in_cv2_windows(multi_frame_payload_queue, thread_exit_event):
+    while not thread_exit_event.is_set():
+        if multi_frame_payload_queue.qsize() > 0:
+            multi_frame_payload = multi_frame_payload_queue.get()
+            logger.debug(
+                f"Multi-frame payload queueue size: {multi_frame_payload_queue.qsize()}"
+            )
 
-    @property
-    def thread_exit_event(self):
-        return self._thread_exit_event
+            for (
+                webcam_id,
+                frame_payload,
+            ) in multi_frame_payload.items():
+                cv2.imshow(
+                    f"(from `multi_camera_thread_runner.py`) Camera {webcam_id} - PRESS `ESC` TO QUIT",
+                    frame_payload.image,
+                )
+
+        key = cv2.waitKey(1)
+        if key == 27:  # esc key kills all streams, I think
+            thread_exit_event.set()
+
+        if thread_exit_event.is_set():
+            cv2.destroyAllWindows()
+
+
+class MultiCameraThreadRunner:
+    thread_exit_event = None
 
     @property
     def multi_frame_payload_queue(self):
         return self._multi_frame_payload_queue
 
-    def create_camera_threads(
-        self, dictionary_of_webcam_configs=Dict[str, WebcamConfig]
+    def create_and_launch_camera_threads(
+        self,
+        dictionary_of_webcam_configs=Dict[str, WebcamConfig],
+        show_videos_in_cv2_windows: bool = False,
     ) -> queue.Queue:
         logger.info("creating camera threads")
 
-        if self._thread_exit_event is not None:
-            self._thread_exit_event.set()
+        if self.thread_exit_event is not None:
+            # if things are already running, shut them down before restarting
+            self.thread_exit_event.set()
 
-        self._thread_exit_event = threading.Event()
+        self.thread_exit_event = threading.Event()
 
         # number of cameras plus one for the frame_grabbing_thread
         barrier_count = len(dictionary_of_webcam_configs) + 1
@@ -111,21 +127,39 @@ class CameraThreadManager:
                 webcam_config,
                 self._dictionary_of_incoming_frame_queues[webcam_id],
                 self._thread_barrier,
-                self._thread_exit_event,
+                self.thread_exit_event,
             )
 
         self._multi_frame_payload_queue = queue.Queue()
-        self._create_and_start_multi_frame_grabber_thread(
+        self._create_and_start_multi_frame_gatherer_thread(
             self._multi_frame_payload_queue,
             self._dictionary_of_incoming_frame_queues,
             self._thread_barrier,
-            self._thread_exit_event,
+            self.thread_exit_event,
         )
 
         for camera_thread in self._dictionary_of_camera_threads.values():
             camera_thread.start()
 
+        if show_videos_in_cv2_windows:
+            self._launch_video_viewer_thread(
+                self._multi_frame_payload_queue, self.thread_exit_event
+            )
+
         return self._multi_frame_payload_queue
+
+    def _launch_video_viewer_thread(
+        self,
+        multi_frame_payload_queue: queue.Queue,
+        thread_exit_event: threading.Event,
+    ):
+        logger.info("Launching video viewing thread")
+        self._video_viewer_thread = threading.Thread(
+            target=show_videos_in_cv2_windows,
+            args=(multi_frame_payload_queue, thread_exit_event),
+            name="Video_viewing_thread",
+        )
+        self._video_viewer_thread.start()
 
     def _create_camera_thread(
         self,
@@ -134,7 +168,7 @@ class CameraThreadManager:
         thread_barrier: threading.Barrier,
         thread_exit_event: threading.Event,
     ):
-        print(f"Starting thread for Camera {webcam_config.webcam_id}")
+        logger.info(f"Starting thread for Camera {webcam_config.webcam_id}")
 
         camera_thread = threading.Thread(
             target=stuff_incoming_frames_into_a_queue,
@@ -148,15 +182,15 @@ class CameraThreadManager:
         )
         return camera_thread
 
-    def _create_and_start_multi_frame_grabber_thread(
+    def _create_and_start_multi_frame_gatherer_thread(
         self,
         multi_frame_payload_queue: queue.Queue,
         dictionary_of_incoming_frame_queues: Dict[str, queue.Queue],
         thread_barrier: threading.Barrier,
         thread_exit_event: threading.Event,
     ):
-        self._multi_frame_grabber_thread = threading.Thread(
-            target=grab_incoming_frame_payloads,
+        self._multi_frame_gatherer_thread = threading.Thread(
+            target=gather_incoming_frames_and_stuff_them_into_a_queue,
             args=(
                 multi_frame_payload_queue,
                 dictionary_of_incoming_frame_queues,
@@ -165,11 +199,16 @@ class CameraThreadManager:
             ),
             name=f"Multi-frame-payload-grabber-thread",
         )
-        self._multi_frame_grabber_thread.start()
+        self._multi_frame_gatherer_thread.start()
+
+    def exit(self):
+        self.thread_exit_event.set()
 
 
 if __name__ == "__main__":
-    camera_thread_manager = CameraThreadManager()
+    from src.cameras.detection.cam_singleton import get_or_create_cams
+
+    camera_thread_manager = MultiCameraThreadRunner()
 
     found_cameras_response = get_or_create_cams()
     available_cameras = found_cameras_response.cameras_found_list
@@ -178,26 +217,28 @@ if __name__ == "__main__":
     for webcam_id in available_cameras:
         dictionary_of_webcam_configs[str(webcam_id)] = WebcamConfig(webcam_id=webcam_id)
 
-    camera_thread_manager.create_camera_threads(dictionary_of_webcam_configs)
-
-    while not camera_thread_manager.thread_exit_event.is_set():
-        if camera_thread_manager.multi_frame_payload_queue.qsize() > 0:
-            multi_frame_payload = camera_thread_manager.multi_frame_payload_queue.get()
-            logger.info(
-                f"Multi-frame payload queueue size: {camera_thread_manager.multi_frame_payload_queue.qsize()}"
-            )
-
-            for (
-                webcam_id,
-                frame_payload,
-            ) in multi_frame_payload.items():
-                cv2.imshow(
-                    f"Camera {webcam_id} - PRESS `ESC` TO QUIT", frame_payload.image
-                )
-
-        key = cv2.waitKey(1)
-        if key == 27:  # esc key kills all streams, I think
-            camera_thread_manager.thread_exit_event.set()
-
-        if camera_thread_manager.thread_exit_event.is_set():
-            cv2.destroyAllWindows()
+    camera_thread_manager.create_and_launch_camera_threads(
+        dictionary_of_webcam_configs, show_videos_in_cv2_windows=True
+    )
+    #
+    # while not camera_thread_manager.thread_exit_event.is_set():
+    #     if camera_thread_manager.multi_frame_payload_queue.qsize() > 0:
+    #         multi_frame_payload = camera_thread_manager.multi_frame_payload_queue.get()
+    #         logger.info(
+    #             f"Multi-frame payload queueue size: {camera_thread_manager.multi_frame_payload_queue.qsize()}"
+    #         )
+    #
+    #         for (
+    #             webcam_id,
+    #             frame_payload,
+    #         ) in multi_frame_payload.items():
+    #             cv2.imshow(
+    #                 f"Camera {webcam_id} - PRESS `ESC` TO QUIT", frame_payload.image
+    #             )
+    #
+    #     key = cv2.waitKey(1)
+    #     if key == 27:  # esc key kills all streams, I think
+    #         camera_thread_manager.thread_exit_event.set()
+    #
+    #     if camera_thread_manager.thread_exit_event.is_set():
+    #         cv2.destroyAllWindows()
