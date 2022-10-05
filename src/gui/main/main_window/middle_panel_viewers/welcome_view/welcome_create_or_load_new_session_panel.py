@@ -67,15 +67,27 @@ class WelcomeCreateOrLoadNewSessionPanel(QWidget):
         )
         self._layout.addWidget(self._import_synchronized_videos_button)
 
-        send_pings_label = QLabel(
-            "(being able to show that people are using this thing will help us get funding for this project :D )"
+        self._import_pre_alpha_freemocap_session_button = QPushButton(
+            "Import Pre-Alpha FreeMoCap Session (Ctrl+P)"
         )
-        send_pings_label.setWordWrap(True)
+        self._import_pre_alpha_freemocap_session_button.setEnabled(True)
+        self._import_pre_alpha_freemocap_session_button.setToolTip(
+            "Import a session that was recorded with the `pre-alpha` version of freemocap (<=v0.0.54)"
+        )
+        self._import_pre_alpha_freemocap_session_button.clicked.connect(
+            self._import_pre_alpha_freemocap_session_button_clicked
+        )
+        self._layout.addWidget(self._import_pre_alpha_freemocap_session_button)
+
         self._send_pings_checkbox = QCheckBox(
             "Send ping to devs to let us know when you make a new session"
         )
         self._send_pings_checkbox.setChecked(True)
         self._layout.addWidget(self._send_pings_checkbox)
+        send_pings_label = QLabel(
+            "(being able to show that people are using this thing will help us get funding for this project :D )"
+        )
+        send_pings_label.setWordWrap(True)
         self._layout.addWidget(send_pings_label)
 
         self._layout.addStretch()
@@ -195,3 +207,13 @@ class WelcomeCreateOrLoadNewSessionPanel(QWidget):
         self._layout.addWidget(self._launch_synchronized_videos_selection_dialog_button)
         self._launch_synchronized_videos_selection_dialog_button.setFocus()
         self._layout.addStretch()
+
+    def _import_pre_alpha_freemocap_session_button_clicked(self):
+        self._import_pre_alpha_freemocap_session_temp_qlabel = QLabel(
+            "TODO - Open a directory search to load a pre-alpa freemocap session and convert all the filenames and whatnot to match the new workflow"
+        )
+        self._import_pre_alpha_freemocap_session_temp_qlabel.setWordWrap(True)
+        self._import_pre_alpha_freemocap_session_temp_qlabel.setStyleSheet(
+            "color: #000055; background-color: #999999; font-size: 16px; font-weight: bold; padding: 10px; border-radius: 10px;"
+        )
+        self._import_pre_alpha_freemocap_session_temp_qlabel.show()
